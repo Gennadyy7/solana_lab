@@ -1,0 +1,30 @@
+services:
+  solana-validator:
+    image: solanalabs/solana:stable
+    command: solana-test-validator
+    ports:
+      - "8899:8899"
+      - "8900:8900"
+      - "8000-8009:8000-8009"
+    networks:
+      - solana-network
+
+  solana-cli:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./scripts:/app/scripts
+      - solana-config:/root/.config/solana
+    depends_on:
+      - solana-validator
+    networks:
+      - solana-network
+    command: tail -f /dev/null
+
+volumes:
+  solana-config:
+
+networks:
+  solana-network:
+    driver: bridge
