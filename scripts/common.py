@@ -6,7 +6,6 @@ from typing import Optional, Union
 
 from solana.constants import LAMPORTS_PER_SOL
 from solana.rpc.api import Client
-from solders.hash import Hash
 from solders.keypair import Keypair
 from solders.message import Message
 from solders.pubkey import Pubkey
@@ -76,7 +75,7 @@ def estimate_simple_transfer_fee(client: Client, from_pub: Pubkey, to_pub: Pubke
     for attempt in range(retries):
         try:
             bh_resp = client.get_latest_blockhash()
-            blockhash = Hash.from_string(bh_resp.value.blockhash)
+            blockhash = bh_resp.value.blockhash
             ix = transfer(TransferParams(from_pubkey=from_pub, to_pubkey=to_pub, lamports=1))
             msg = Message.new_with_blockhash([ix], payer=from_pub, blockhash=blockhash)
             fee_resp = client.get_fee_for_message(msg)
@@ -90,7 +89,9 @@ def estimate_simple_transfer_fee(client: Client, from_pub: Pubkey, to_pub: Pubke
     return 5000
 
 
-def send_transfer_transaction(client: Client, from_keypair: Keypair, to_pub: Pubkey, lamports: int) -> Optional[Signature]:
+def send_transfer_transaction(
+        client: Client, from_keypair: Keypair, to_pub: Pubkey, lamports: int
+) -> Optional[Signature]:
     try:
         ix = transfer(TransferParams(from_pubkey=from_keypair.pubkey(), to_pubkey=to_pub, lamports=lamports))
         blockhash = client.get_latest_blockhash().value.blockhash
