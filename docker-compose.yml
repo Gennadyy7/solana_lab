@@ -20,6 +20,8 @@ services:
       - solana-validator
     networks:
       - solana-network
+    env_file:
+      - .env
     command: tail -f /dev/null
 
 volumes:
