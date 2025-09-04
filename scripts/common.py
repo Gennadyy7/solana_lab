@@ -97,7 +97,7 @@ def send_transfer_transaction(
         blockhash = client.get_latest_blockhash().value.blockhash
         msg = Message.new_with_blockhash([ix], payer=from_keypair.pubkey(), blockhash=blockhash)
         tx = Transaction.new_unsigned(msg)
-        tx.sign([from_keypair])
+        tx.sign([from_keypair], blockhash)
         sig = client.send_transaction(tx).value
         return sig
     except Exception as e:
