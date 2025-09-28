@@ -1,0 +1,19 @@
+solana config get
+
+solana config set --url devnet
+
+solana-keygen grind --starts-with mnt:1
+
+spl-token create-token \
+--program-id TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb \
+--enable-metadata \
+--decimals 9 \
+mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh.json
+
+spl-token create-account mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh
+
+spl-token mint mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh 10000
+
+spl-token display mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh
+
+spl-token transfer mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh 100 rec5LKDkceRinpoJwk7RbNnSPwkVXvYhFb2KP1jj96E --fund-recipient --allow-unfunded-recipient
