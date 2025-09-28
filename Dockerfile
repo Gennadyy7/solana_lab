@@ -31,27 +31,15 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y \
     libssl-dev \
     curl \
+    git \
+    nano \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
-    && npm install -g ts-node typescript
+    && npm install -g ts-node typescript yarn
 
 WORKDIR /app
-RUN npm init -y
-
-RUN npm install \
-    @solana/web3.js@latest \
-    @raydium-io/raydium-sdk-v2@latest \
-    @solana/spl-token@latest \
-    bn.js@latest \
-    decimal.js@latest \
-    @types/bn.js@latest \
-    bs58@latest \
-    dotenv@latest \
-    typescript@latest \
-    ts-node@latest \
-    @types/node@latest
 
 COPY --from=builder /usr/local/bin/solana* /usr/local/bin/
 COPY --from=builder /root/.cargo/bin/spl-token /usr/local/bin/spl-token

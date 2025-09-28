@@ -8,7 +8,7 @@ solana config get
 
 solana config set --url devnet
 
-solana config set --keypair id.json
+solana config set --keypair /app/id.json
 
 solana-keygen grind --starts-with mnt:1
 
