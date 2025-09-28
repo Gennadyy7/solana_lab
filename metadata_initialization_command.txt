@@ -1,0 +1,5 @@
+spl-token initialize-metadata \
+mntHERESYOURCOIN \
+"Davies7 Coin" \
+"DAV7" \
+https://moccasin-main-whippet-16.mypinata.cloud/ipfs/bafkreiadmkoseiyp6srmspouofihqjgek2kbbgxpx2ij7afvfmbje3nhr4
