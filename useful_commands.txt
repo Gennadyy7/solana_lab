@@ -1,6 +1,14 @@
+docker cp id.json solana_lab-solana-cli-1:/app/
+
+docker cp mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh.json solana_lab-solana-cli-1:/app/
+
+docker cp rec5LKDkceRinpoJwk7RbNnSPwkVXvYhFb2KP1jj96E.json solana_lab-solana-cli-1:/app/
+
 solana config get
 
 solana config set --url devnet
+
+solana config set --keypair id.json
 
 solana-keygen grind --starts-with mnt:1
 
@@ -19,3 +27,5 @@ spl-token display mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh
 spl-token transfer mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh 100 rec5LKDkceRinpoJwk7RbNnSPwkVXvYhFb2KP1jj96E --fund-recipient --allow-unfunded-recipient
 
 spl-token wrap 0.5
+
+spl-token accounts  # Displays addresses and balances for them
