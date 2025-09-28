@@ -33,6 +33,26 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && npm install -g ts-node typescript
+
+WORKDIR /app
+RUN npm init -y
+
+RUN npm install \
+    @solana/web3.js@latest \
+    @raydium-io/raydium-sdk-v2@latest \
+    @solana/spl-token@latest \
+    bn.js@latest \
+    decimal.js@latest \
+    @types/bn.js@latest \
+    bs58@latest \
+    dotenv@latest \
+    typescript@latest \
+    ts-node@latest \
+    @types/node@latest
+
 COPY --from=builder /usr/local/bin/solana* /usr/local/bin/
 COPY --from=builder /root/.cargo/bin/spl-token /usr/local/bin/spl-token
 COPY --from=builder /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
@@ -40,9 +60,7 @@ COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV PATH="/root/.local/share/solana/install/active_release/bin:${PATH}"
-
-WORKDIR /app
+ENV PATH="/usr/local/bin:${PATH}"
 
 COPY scripts/ ./scripts/
 
