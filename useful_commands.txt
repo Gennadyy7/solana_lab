@@ -29,3 +29,5 @@ spl-token transfer mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh 100 rec5LKDkceRin
 spl-token wrap 0.5
 
 spl-token accounts  # Displays addresses and balances for them
+
+python price_report.py --url https://api.devnet.solana.com --info swap-info.json
