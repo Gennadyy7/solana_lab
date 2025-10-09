@@ -16,7 +16,8 @@ RUN cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
 RUN rustup default stable
 
 RUN sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)" \
-    && mv /root/.local/share/solana/install/active_release/bin/solana* /usr/local/bin/
+    && cp -r /root/.local/share/solana/install/active_release/bin/* /usr/local/bin/ \
+    && export PATH="/usr/local/bin:$PATH"
 
 RUN cargo install spl-token-cli
 
@@ -37,6 +38,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     git \
     nano \
+    build-essential \
+    pkg-config \
+    libudev-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -55,6 +59,7 @@ COPY --from=builder /usr/local/bin/ /usr/local/bin/
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/root/.cargo/bin:/root/.local/bin:/usr/local/bin:${PATH}"
+ENV PATH="/usr/local/bin:/root/.cargo/bin:/root/.local/bin:${PATH}"
 
 COPY scripts/ ./scripts/
 
