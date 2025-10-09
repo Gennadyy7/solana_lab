@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-from anchorpy import Program, Provider, Context
+from anchorpy import Program, Provider, Context, Idl
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey as PublicKey
 from solana.rpc.async_api import AsyncClient
@@ -13,7 +13,7 @@ from anchorpy.provider import Wallet
 
 
 DEFAULT_RPC = os.getenv("SOLANA_RPC_URL") or "http://solana-validator:8899"
-PROGRAM_ID = PublicKey("F5dqGKbj7K9TZybzNKFhViMySM6vsED5f1oAy5rmKcj3")
+PROGRAM_ID = PublicKey.from_string("F5dqGKbj7K9TZybzNKFhViMySM6vsED5f1oAy5rmKcj3")
 IDL_PATH = Path(__file__).parent.parent / "counter" / "target" / "idl" / "counter.json"
 
 
@@ -35,7 +35,8 @@ class CounterClient:
         self.wallet_wrapper = Wallet(self.wallet)
         self.provider = Provider(self.client, self.wallet_wrapper)
         with open(self.idl_path, "r") as f:
-            idl = json.load(f)
+            idl_json_str = f.read()
+        idl = Idl.from_json(idl_json_str)
         self.program = Program(idl, self.program_id, self.provider)
         self.counter_keypair: Optional[Keypair] = None
 
