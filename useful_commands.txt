@@ -41,7 +41,7 @@ Remove .git with rm -rf .git
 Write the following code along this path (programs/counter/src/lib.rs):
 use anchor_lang::prelude::*;
 
-declare_id!("11111111111111111111111111111111"); // временно, Anchor заменит при deploy
+declare_id!("F5dqGKbj7K9TZybzNKFhViMySM6vsED5f1oAy5rmKcj3");
 
 #[program]
 pub mod counter {
@@ -87,3 +87,13 @@ pub struct Counter {
 }
 
 Further inside the /app/counter directory: anchor build
+
+anchor clean
+
+anchor build
+
+anchor deploy
+
+solana program show F5dqGKbj7K9TZybzNKFhViMySM6vsED5f1oAy5rmKcj3
+
+anchor idl fetch F5dqGKbj7K9TZybzNKFhViMySM6vsED5f1oAy5rmKcj3
