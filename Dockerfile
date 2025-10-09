@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
+RUN cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+
+RUN rustup default stable
+
 RUN sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)" \
     && mv /root/.local/share/solana/install/active_release/bin/solana* /usr/local/bin/
 
@@ -42,18 +46,27 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 WORKDIR /app
 
 COPY --from=builder /usr/local/bin/solana* /usr/local/bin/
-COPY --from=builder /root/.cargo/bin/spl-token /usr/local/bin/spl-token
+COPY --from=builder /root/.rustup/ /root/.rustup/
+COPY --from=builder /root/.cargo/ /root/.cargo/
+COPY --from=builder /root/.local/ /root/.local/
 COPY --from=builder /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV PATH="/usr/local/bin:${PATH}"
+ENV PATH="/root/.cargo/bin:/root/.local/bin:/usr/local/bin:${PATH}"
 
 COPY scripts/ ./scripts/
 
 RUN solana config set --url http://solana-validator:8899
 RUN solana-keygen new --no-passphrase --outfile /root/.config/solana/id.json
+
+RUN avm install latest && avm use latest
+
+RUN anchor --version
+RUN solana --version
+RUN rustc --version
+RUN cargo --version
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
