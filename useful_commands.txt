@@ -36,6 +36,8 @@ python price_report.py --url https://api.devnet.solana.com --info swap-info.json
 
 anchor init counter
 
+Remove .git with rm -rf .git
+
 Write the following code along this path (programs/counter/src/lib.rs):
 use anchor_lang::prelude::*;
 
