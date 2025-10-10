@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
-declare_id!("mntrBoi14K4bn4QqT9pHicv3EKqvxCT4y9mS7YfJkDh");
+declare_id!("2JubASqT22dDF7uPzZGtwqerKf6f8FhCms694yssT1ay");
 
 // Курс: 1 WSOL = 2 твоих токена
 const WSOL_TO_TOKEN_RATE: u64 = 2;
