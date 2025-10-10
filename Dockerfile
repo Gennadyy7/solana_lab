@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
-    && npm install -g ts-node typescript yarn
+    && npm install -g ts-node typescript yarn @solana/spl-token @types/node
 
 WORKDIR /app
 
