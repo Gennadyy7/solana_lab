@@ -97,3 +97,7 @@ anchor deploy
 solana program show F5dqGKbj7K9TZybzNKFhViMySM6vsED5f1oAy5rmKcj3
 
 anchor idl fetch F5dqGKbj7K9TZybzNKFhViMySM6vsED5f1oAy5rmKcj3
+
+cd counter/
+
+ANCHOR_PROVIDER_URL=https://api.devnet.solana.com ANCHOR_WALLET=/app/id.json npx ts-node scripts/counter_client.ts
