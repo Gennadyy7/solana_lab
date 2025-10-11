@@ -1,133 +1,210 @@
 import * as anchor from "@coral-xyz/anchor";
-import { MyDex } from "../target/types/my_dex";
 import {
   TOKEN_PROGRAM_ID,
   createMint,
-  getOrCreateAssociatedTokenAccount,
+  getAssociatedTokenAddressSync,
+  createAssociatedTokenAccountInstruction,
   mintTo,
+  createTransferInstruction,
 } from "@solana/spl-token";
-import { Keypair } from "@solana/web3.js";
+import {
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  Keypair,
+} from "@solana/web3.js";
+
+const RATE = 2; // 1 WSOL = 2 YOUR_TOKEN
+const DECIMALS = 6;
 
 async function main() {
-  // === Provider and Program setup ===
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
+  const program = anchor.workspace.MyDex as anchor.Program;
   const wallet = provider.wallet as anchor.Wallet;
-  const program = anchor.workspace.MyDex as anchor.Program<MyDex>;
-  const connection = provider.connection;
   const payer = (provider as any).wallet.payer as Keypair;
+  const conn = provider.connection;
 
   console.log("🔗 Wallet:", wallet.publicKey.toBase58());
 
-  // === Create test token mints (tokenA and tokenB) ===
+  // 1️⃣ Создаём тестовые mint'ы
   console.log("🪙 Creating token mints...");
-  const decimals = 6;
-  const tokenAMint = await createMint(connection, payer, wallet.publicKey, null, decimals);
-  const tokenBMint = await createMint(connection, payer, wallet.publicKey, null, decimals);
+  const myTokenMint = await createMint(conn, payer, wallet.publicKey, null, DECIMALS);
+  const wsolMint = await createMint(conn, payer, wallet.publicKey, null, DECIMALS);
+  console.log("   myTokenMint:", myTokenMint.toBase58());
+  console.log("   wsolMint:   ", wsolMint.toBase58());
 
-  // === Get/create user's ATAs for both mints ===
-  const userTokenA = await getOrCreateAssociatedTokenAccount(connection, payer, tokenAMint, wallet.publicKey);
-  const userTokenB = await getOrCreateAssociatedTokenAccount(connection, payer, tokenBMint, wallet.publicKey);
-
-  // Mint some tokens to the user for testing
-  await mintTo(connection, payer, tokenAMint, userTokenA.address, payer, 1_000_000_000); // 1000 tokens (6 decimals)
-  await mintTo(connection, payer, tokenBMint, userTokenB.address, payer, 1_000_000_000); // 1000 tokenB (WSOL-like)
-
-  console.log("✅ Tokens minted to user wallets");
-  console.log("   tokenAMint:", tokenAMint.toBase58());
-  console.log("   tokenBMint:", tokenBMint.toBase58());
-
-  // === Derive Pool PDA ===
-  const [poolPda] = anchor.web3.PublicKey.findProgramAddressSync(
-    [Buffer.from("pool")],
+  // 2️⃣ PDA пула (совпадает с Rust seeds)
+  const [poolPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("pool"), myTokenMint.toBuffer(), wsolMint.toBuffer()],
     program.programId
   );
+  console.log("🏦 poolPda:", poolPda.toBase58());
 
-  // === Generate new Keypairs for vaults (Anchor will create them) ===
-  const poolTokenAVault = Keypair.generate();
-  const poolTokenBVault = Keypair.generate();
+  // 3️⃣ ATA для пула (allowOwnerOffCurve = true)
+  const poolTokenAAccount = getAssociatedTokenAddressSync(myTokenMint, poolPda, true);
+  const poolTokenBAccount = getAssociatedTokenAddressSync(wsolMint, poolPda, true);
+  console.log("   poolTokenA (vault):", poolTokenAAccount.toBase58());
+  console.log("   poolTokenB (vault):", poolTokenBAccount.toBase58());
 
-  console.log("🏦 Pool PDA:", poolPda.toBase58());
-  console.log("   poolTokenAVault:", poolTokenAVault.publicKey.toBase58());
-  console.log("   poolTokenBVault:", poolTokenBVault.publicKey.toBase58());
+  // 4️⃣ ATA пользователя
+  const userTokenA = getAssociatedTokenAddressSync(myTokenMint, wallet.publicKey);
+  const userTokenB = getAssociatedTokenAddressSync(wsolMint, wallet.publicKey);
+  console.log("   userTokenA:", userTokenA.toBase58());
+  console.log("   userTokenB:", userTokenB.toBase58());
 
-  // === Initialize pool with initial liquidity ===
-  console.log("🚀 Initializing pool...");
-  const initial = 500_000_000; // 500 tokens (6 decimals)
+  // 5️⃣ Создаём недостающие ATAs
+  const createAtasTx = new Transaction();
+  const infos = await conn.getMultipleAccountsInfo([
+    userTokenA,
+    userTokenB,
+    poolTokenAAccount,
+    poolTokenBAccount,
+  ]);
 
+  if (!infos[0]) {
+    createAtasTx.add(
+      createAssociatedTokenAccountInstruction(
+        wallet.publicKey,
+        userTokenA,
+        wallet.publicKey,
+        myTokenMint
+      )
+    );
+  }
+  if (!infos[1]) {
+    createAtasTx.add(
+      createAssociatedTokenAccountInstruction(
+        wallet.publicKey,
+        userTokenB,
+        wallet.publicKey,
+        wsolMint
+      )
+    );
+  }
+  if (!infos[2]) {
+    createAtasTx.add(
+      createAssociatedTokenAccountInstruction(
+        wallet.publicKey,
+        poolTokenAAccount,
+        poolPda,
+        myTokenMint
+      )
+    );
+  }
+  if (!infos[3]) {
+    createAtasTx.add(
+      createAssociatedTokenAccountInstruction(
+        wallet.publicKey,
+        poolTokenBAccount,
+        poolPda,
+        wsolMint
+      )
+    );
+  }
+
+  if (createAtasTx.instructions.length > 0) {
+    console.log("🔧 Creating missing ATAs...");
+    await provider.sendAndConfirm(createAtasTx);
+    console.log("   ATAs created.");
+  } else {
+    console.log("   All ATAs already exist.");
+  }
+
+  // 6️⃣ Минтим тестовые токены пользователю
+  console.log("💸 Minting test tokens...");
+  await mintTo(conn, payer, myTokenMint, userTokenA, payer, BigInt(1_000_000_000)); // 1000 токенов
+  await mintTo(conn, payer, wsolMint, userTokenB, payer, BigInt(500_000_000)); // 500 WSOL
+  console.log("   Minted.");
+
+  // 7️⃣ Инициализация пула
+  console.log("⚙️ Initializing pool...");
   await program.methods
-    .initialize(new anchor.BN(initial), new anchor.BN(initial))
+    .initialize(new anchor.BN(RATE))
     .accounts({
-      user: wallet.publicKey,
       pool: poolPda,
-      tokenAVault: poolTokenAVault.publicKey,
-      tokenBVault: poolTokenBVault.publicKey,
-      userTokenA: userTokenA.address,
-      userTokenB: userTokenB.address,
-      tokenAMint: tokenAMint,
-      tokenBMint: tokenBMint,
-      systemProgram: anchor.web3.SystemProgram.programId,
+      tokenAMint: myTokenMint,
+      tokenBMint: wsolMint,
+      tokenAVault: poolTokenAAccount,
+      tokenBVault: poolTokenBAccount,
+      user: wallet.publicKey,
+      systemProgram: SystemProgram.programId,
       tokenProgram: TOKEN_PROGRAM_ID,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-    } as any)
-    .signers([poolTokenAVault, poolTokenBVault])
+    })
     .rpc();
+  console.log("   Pool initialized.");
 
-  console.log("✅ Pool initialized!");
+  // 8️⃣ Заливаем ликвидность (user → pool)
+  console.log("🏦 Adding liquidity to pool...");
+  const depositTx = new Transaction();
+  depositTx.add(
+    createTransferInstruction(
+      userTokenA,
+      poolTokenAAccount,
+      wallet.publicKey,
+      200_000_000, // 200 токенов
+      [],
+      TOKEN_PROGRAM_ID
+    )
+  );
+  depositTx.add(
+    createTransferInstruction(
+      userTokenB,
+      poolTokenBAccount,
+      wallet.publicKey,
+      100_000_000, // 100 WSOL
+      [],
+      TOKEN_PROGRAM_ID
+    )
+  );
+  await provider.sendAndConfirm(depositTx);
+  console.log("   Liquidity added.");
 
-  // === BUY: swap WSOL(tokenB) -> tokenA ===
-  const amountIn = new anchor.BN(100_000_000); // 100 tokenB
-  console.log("💱 Swapping WSOL → TokenA ...");
-
+  // 9️⃣ BUY: отправляем WSOL → получаем свой токен
+  const amountB = 10_000_000; // 10 WSOL
+  console.log(`💱 BUY: ${amountB / 10 ** DECIMALS} WSOL -> tokens`);
   await program.methods
-    .buy(amountIn)
+    .buy(new anchor.BN(amountB))
     .accounts({
-      user: wallet.publicKey,
       pool: poolPda,
-      userTokenA: userTokenA.address,
-      userTokenB: userTokenB.address,
-      poolTokenAVault: poolTokenAVault.publicKey,
-      poolTokenBVault: poolTokenBVault.publicKey,
-      tokenAMint: tokenAMint,
-      tokenBMint: tokenBMint,
+      user: wallet.publicKey,
+      userAAta: userTokenA,
+      userBAta: userTokenB,
+      tokenAVault: poolTokenAAccount,
+      tokenBVault: poolTokenBAccount,
       tokenProgram: TOKEN_PROGRAM_ID,
-    } as any)
+    })
     .rpc();
+  console.log("   BUY complete.");
 
-  console.log("✅ Buy transaction complete");
-
-  // === SELL: swap TokenA -> WSOL(tokenB) ===
-  const amountSell = new anchor.BN(50_000_000); // 50 tokenA
-  console.log("💱 Swapping TokenA → WSOL ...");
-
+  // 🔟 SELL: отправляем свои токены → получаем WSOL
+  const amountA = 20_000_000; // 20 токенов
+  console.log(`💱 SELL: ${amountA / 10 ** DECIMALS} TOKEN -> WSOL`);
   await program.methods
-    .sell(amountSell)
+    .sell(new anchor.BN(amountA))
     .accounts({
-      user: wallet.publicKey,
       pool: poolPda,
-      userTokenA: userTokenA.address,
-      userTokenB: userTokenB.address,
-      poolTokenAVault: poolTokenAVault.publicKey,
-      poolTokenBVault: poolTokenBVault.publicKey,
-      tokenAMint: tokenAMint,
-      tokenBMint: tokenBMint,
+      user: wallet.publicKey,
+      userAAta: userTokenA,
+      userBAta: userTokenB,
+      tokenAVault: poolTokenAAccount,
+      tokenBVault: poolTokenBAccount,
       tokenProgram: TOKEN_PROGRAM_ID,
-    } as any)
+    })
     .rpc();
+  console.log("   SELL complete.");
 
-  console.log("✅ Sell transaction complete");
-
-  // === Final balances ===
-  const refreshedA = await connection.getTokenAccountBalance(userTokenA.address);
-  const refreshedB = await connection.getTokenAccountBalance(userTokenB.address);
-
-  console.log(`📊 Final balances:`);
-  console.log(`   Token A: ${refreshedA.value.uiAmount}`);
-  console.log(`   Token B (WSOL): ${refreshedB.value.uiAmount}`);
+  // 🔢 Балансы пользователя
+  const aBal = await conn.getTokenAccountBalance(userTokenA);
+  const bBal = await conn.getTokenAccountBalance(userTokenB);
+  console.log("📊 Final user balances:");
+  console.log("   MyToken:", aBal.value.uiAmount);
+  console.log("   WSOL:   ", bBal.value.uiAmount);
 }
 
 main().catch((err) => {
-  console.error("❌ Error:", err);
+  console.error("❌ Fatal error:", err);
   process.exit(1);
 });
 

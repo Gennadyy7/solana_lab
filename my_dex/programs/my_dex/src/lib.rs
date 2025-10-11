@@ -1,184 +1,127 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
-declare_id!("2JubASqT22dDF7uPzZGtwqerKf6f8FhCms694yssT1ay");
-
-// Курс: 1 WSOL = 2 твоих токена
-const WSOL_TO_TOKEN_RATE: u64 = 2;
+declare_id!("2JubASqT22dDF7uPzZGtwqerKf6f8FhCms694yssT1ay"); // ✅ ровно 32 байта
 
 #[program]
 pub mod my_dex {
     use super::*;
 
-    /// Initialize pool and provide initial liquidity.
-    /// `initial_a` — amount of YOUR_TOKEN to deposit into pool vault A
-    /// `initial_b` — amount of WSOL to deposit into pool vault B
-    pub fn initialize(ctx: Context<Initialize>, initial_a: u64, initial_b: u64) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, rate: u64) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
+        pool.token_a_mint = ctx.accounts.token_a_mint.key();
+        pool.token_b_mint = ctx.accounts.token_b_mint.key();
         pool.token_a_vault = ctx.accounts.token_a_vault.key();
         pool.token_b_vault = ctx.accounts.token_b_vault.key();
+        pool.bump = ctx.bumps.pool;
+        pool.rate = rate;
+        Ok(())
+    }
 
-        // Transfer initial_a from user_token_a -> token_a_vault (user signs)
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token_a.to_account_info(),
-                    to: ctx.accounts.token_a_vault.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            initial_a,
-        )?;
+    pub fn buy(ctx: Context<Buy>, amount_b: u64) -> Result<()> {
+        let pool = &ctx.accounts.pool;
 
-        // Transfer initial_b from user_token_b -> token_b_vault (user signs)
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token_b.to_account_info(),
-                    to: ctx.accounts.token_b_vault.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            initial_b,
-        )?;
+        let seeds = &[
+            b"pool",
+            pool.token_a_mint.as_ref(),
+            pool.token_b_mint.as_ref(),
+            &[pool.bump],
+        ];
+        let signer_seeds = &[&seeds[..]];
+
+        let amount_a = amount_b * 2; // фиксированный курс
+
+        // Перевод WSOL от пользователя в пул
+        let cpi_accounts_b = Transfer {
+            from: ctx.accounts.user_b_ata.to_account_info(),
+            to: ctx.accounts.token_b_vault.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        let cpi_ctx_b = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts_b);
+        token::transfer(cpi_ctx_b, amount_b)?;
+
+        // Перевод токена A из пула пользователю
+        let cpi_accounts_a = Transfer {
+            from: ctx.accounts.token_a_vault.to_account_info(),
+            to: ctx.accounts.user_a_ata.to_account_info(),
+            authority: ctx.accounts.pool.to_account_info(),
+        };
+        let cpi_ctx_a = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            cpi_accounts_a,
+            signer_seeds,
+        );
+        token::transfer(cpi_ctx_a, amount_a)?;
 
         Ok(())
     }
 
-    /// Пользователь присылает WSOL (amount_in) и получает amount_out = amount_in * RATE ваших токенов
-    pub fn buy(ctx: Context<Swap>, amount_in: u64) -> Result<()> {
-        let amount_out = amount_in
-            .checked_mul(WSOL_TO_TOKEN_RATE)
-            .ok_or(ErrorCode::CalculationOverflow)?;
+    pub fn sell(ctx: Context<Sell>, amount_a: u64) -> Result<()> {
+        let pool = &ctx.accounts.pool;
 
-        // 1) пользователь отправляет WSOL в pool vault (user signs)
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token_b.to_account_info(),
-                    to: ctx.accounts.pool_token_b_vault.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            amount_in,
-        )?;
+        let seeds = &[
+            b"pool",
+            pool.token_a_mint.as_ref(),
+            pool.token_b_mint.as_ref(),
+            &[pool.bump],
+        ];
+        let signer_seeds = &[&seeds[..]];
 
-        // 2) pool (PDA) отправляет ваши токены пользователю — подписываем CPI с PDA seeds
-        let (_pda, bump) = Pubkey::find_program_address(&[b"pool"], &crate::ID);
-        let signer_seeds: &[&[u8]] = &[b"pool", &[bump]];
+        let amount_b = amount_a / 2; // фиксированный курс
 
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.pool_token_a_vault.to_account_info(),
-                    to: ctx.accounts.user_token_a.to_account_info(),
-                    authority: ctx.accounts.pool.to_account_info(),
-                },
-                &[signer_seeds],
-            ),
-            amount_out,
-        )?;
+        // Перевод токена A от пользователя в пул
+        let cpi_accounts_a = Transfer {
+            from: ctx.accounts.user_a_ata.to_account_info(),
+            to: ctx.accounts.token_a_vault.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        let cpi_ctx_a = CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts_a);
+        token::transfer(cpi_ctx_a, amount_a)?;
 
-        Ok(())
-    }
-
-    /// Пользователь отправляет ваши токены (amount_in), получает WSOL = amount_in / RATE
-    pub fn sell(ctx: Context<Swap>, amount_in: u64) -> Result<()> {
-        if WSOL_TO_TOKEN_RATE == 0 {
-            return Err(ErrorCode::CalculationOverflow.into());
-        }
-        let amount_out = amount_in
-            .checked_div(WSOL_TO_TOKEN_RATE)
-            .ok_or(ErrorCode::InvalidAmount)?;
-
-        // 1) пользователь отправляет ваши токены в пул (user signs)
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token_a.to_account_info(),
-                    to: ctx.accounts.pool_token_a_vault.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            amount_in,
-        )?;
-
-        // 2) пул (PDA) отправляет WSOL пользователю
-        let (_pda, bump) = Pubkey::find_program_address(&[b"pool"], &crate::ID);
-        let signer_seeds: &[&[u8]] = &[b"pool", &[bump]];
-
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.pool_token_b_vault.to_account_info(),
-                    to: ctx.accounts.user_token_b.to_account_info(),
-                    authority: ctx.accounts.pool.to_account_info(),
-                },
-                &[signer_seeds],
-            ),
-            amount_out,
-        )?;
+        // Перевод WSOL из пула пользователю
+        let cpi_accounts_b = Transfer {
+            from: ctx.accounts.token_b_vault.to_account_info(),
+            to: ctx.accounts.user_b_ata.to_account_info(),
+            authority: ctx.accounts.pool.to_account_info(),
+        };
+        let cpi_ctx_b = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            cpi_accounts_b,
+            signer_seeds,
+        );
+        token::transfer(cpi_ctx_b, amount_b)?;
 
         Ok(())
     }
 }
 
 #[derive(Accounts)]
+#[instruction(rate: u64)]
 pub struct Initialize<'info> {
-    /// payer and signer who provides initial liquidity
-    #[account(mut)]
-    pub user: Signer<'info>,
-
-    /// Pool PDA account that stores vault pubkeys
     #[account(
         init,
         payer = user,
-        space = 8 + 32 + 32,
-        seeds = [b"pool"],
+        space = 8 + 32*4 + 8 + 1,
+        seeds = [b"pool", token_a_mint.key().as_ref(), token_b_mint.key().as_ref()],
         bump
     )]
-    pub pool: Account<'info, Pool>,
+    pub pool: Account<'info, PoolState>,
 
-    /// Pool's vault for YOUR_TOKEN (created and owned by pool PDA)
+    #[account(mut)]
+    pub token_a_mint: Account<'info, Mint>,
+    #[account(mut)]
+    pub token_b_mint: Account<'info, Mint>,
+
     #[account(
-        init,
-        payer = user,
-        token::mint = token_a_mint,
-        token::authority = pool,
+        mut,
+        constraint = token_a_vault.mint == token_a_mint.key(),
+        constraint = token_b_vault.mint == token_b_mint.key(),
     )]
     pub token_a_vault: Account<'info, TokenAccount>,
-
-    /// Pool's vault for WSOL (created and owned by pool PDA)
-    #[account(
-        init,
-        payer = user,
-        token::mint = token_b_mint,
-        token::authority = pool,
-    )]
     pub token_b_vault: Account<'info, TokenAccount>,
 
-    /// User's ATA for YOUR_TOKEN (must have tokens to fund pool)
-    #[account(mut, constraint = user_token_a.mint == token_a_mint.key())]
-    pub user_token_a: Account<'info, TokenAccount>,
-
-    /// User's ATA for WSOL (must have WSOL to fund pool)
-    #[account(mut, constraint = user_token_b.mint == token_b_mint.key())]
-    pub user_token_b: Account<'info, TokenAccount>,
-
-    /// Your token mint
-    /// CHECK: This is the mint account for the custom token. We don't need to deserialize it here;
-    /// the program only reads its pubkey for mint checks on TokenAccount constraints.
-    pub token_a_mint: UncheckedAccount<'info>,
-
-    /// WSOL mint
-    /// CHECK: This is the WSOL mint account pubkey; no deserialization required in the program.
-    pub token_b_mint: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub user: Signer<'info>,
 
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
@@ -186,57 +129,54 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-pub struct Swap<'info> {
+pub struct Buy<'info> {
+    #[account(mut, has_one = token_a_vault, has_one = token_b_vault)]
+    pub pool: Account<'info, PoolState>,
+
     #[account(mut)]
     pub user: Signer<'info>,
 
-    /// pool PDA, contains vault pubkeys
-    #[account(
-        seeds = [b"pool"],
-        bump,
-    )]
-    pub pool: Account<'info, Pool>,
+    #[account(mut)]
+    pub user_a_ata: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_b_ata: Account<'info, TokenAccount>,
 
-    /// User's ATA for YOUR_TOKEN
-    #[account(mut, constraint = user_token_a.mint == token_a_mint.key())]
-    pub user_token_a: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub token_a_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub token_b_vault: Account<'info, TokenAccount>,
 
-    /// User's ATA for WSOL
-    #[account(mut, constraint = user_token_b.mint == token_b_mint.key())]
-    pub user_token_b: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
 
-    /// Pool's vault for YOUR_TOKEN (must match pool.token_a_vault)
-    #[account(mut, constraint = pool_token_a_vault.key() == pool.token_a_vault)]
-    pub pool_token_a_vault: Account<'info, TokenAccount>,
+#[derive(Accounts)]
+pub struct Sell<'info> {
+    #[account(mut, has_one = token_a_vault, has_one = token_b_vault)]
+    pub pool: Account<'info, PoolState>,
 
-    /// Pool's vault for WSOL (must match pool.token_b_vault)
-    #[account(mut, constraint = pool_token_b_vault.key() == pool.token_b_vault)]
-    pub pool_token_b_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user: Signer<'info>,
 
-    /// Your token mint
-    /// CHECK: used only to check user_token_a.mint constraint; not deserialized.
-    pub token_a_mint: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub user_a_ata: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_b_ata: Account<'info, TokenAccount>,
 
-    /// WSOL mint
-    /// CHECK: used only to check user_token_b.mint constraint; not deserialized.
-    pub token_b_mint: UncheckedAccount<'info>,
+    #[account(mut)]
+    pub token_a_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub token_b_vault: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
 }
 
 #[account]
-pub struct Pool {
+pub struct PoolState {
+    pub token_a_mint: Pubkey,
+    pub token_b_mint: Pubkey,
     pub token_a_vault: Pubkey,
     pub token_b_vault: Pubkey,
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Calculation overflow")]
-    CalculationOverflow,
-    #[msg("Invalid amount for swap")]
-    InvalidAmount,
-    #[msg("Invalid PDA seeds / bump")]
-    InvalidSeeds,
+    pub rate: u64,
+    pub bump: u8,
 }
 
